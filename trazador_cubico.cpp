@@ -1,22 +1,21 @@
-/*
- * trazador_cubico.cpp
- * -------------------
- * Interpolación de la población de Croacia (1994-2023) con un trazador
- * cúbico natural construido a partir de los 25 datos NO subrayados.
+/**
+ * @file trazador_cubico.cpp
+ * @brief Interpolación de la población de Croacia con un trazador cúbico natural.
  *
- * En cada subintervalo [x_j, x_{j+1}]:
+ * El trazador se construye con los 25 datos no subrayados de 1994 a 2023 y se
+ * evalúa en los 5 años subrayados para medir el error relativo. En cada
+ * subintervalo [x_j, x_{j+1}] se usa
+ *
  *     S_j(x) = a_j + b_j (x - x_j) + c_j (x - x_j)^2 + d_j (x - x_j)^3,
- * con condiciones de frontera naturales S''(x_0) = S''(x_n) = 0.
  *
- * Los coeficientes c_j se obtienen de un sistema tridiagonal resuelto con
- * la factorización de Crout (algoritmo de Thomas), según el Algoritmo 3.4
- * de Burden & Faires, "Análisis Numérico".
+ * con las condiciones de frontera naturales S''(x_0) = S''(x_n) = 0.
  *
- * Compilar:  g++ -std=c++17 -O2 -o trazador_cubico trazador_cubico.cpp
- * Ejecutar:  ./trazador_cubico        (en Windows: trazador_cubico.exe)
+ * El programa imprime la tabla de errores y los tiempos de ejecución, y escribe
+ * resultados_trazador.csv, curva_trazador.csv y tiempos_trazador.csv.
  *
- * Salidas: tabla en consola, resultados_trazador.csv, curva_trazador.csv y
- * tiempos_trazador.csv (tiempo de ejecución del algoritmo).
+ * Compilación: g++ -std=c++17 -O2 -o trazador_cubico trazador_cubico.cpp
+ *
+ * @author Salomón Alfredo Ávila Larrotta
  */
 
 #include <chrono>
@@ -24,26 +23,42 @@
 #include <cstdio>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// Datos: población de Croacia 1994-2023 (hoja CROACIA del archivo Excel).
-// ---------------------------------------------------------------------------
+/** Número de datos anuales de población. */
 const int N_DATOS = 30;
+
+/** Primer año de la serie. */
 const int ANIO_INICIAL = 1994;
+
+/** Población de Croacia de 1994 a 2023, tomada de la hoja CROACIA del Excel del curso. */
 const long POBLACION[N_DATOS] = {
     4675517, 4619362, 4562290, 4504627, 4445669, 4385823, 4326105, 4301079,
     4305783, 4306683, 4310050, 4313946, 4315802, 4315959, 4314635, 4310537,
     4301150, 4280827, 4259233, 4242403, 4219485, 4183732, 4136438, 4079198,
     4024868, 3986338, 3953956, 3924607, 3907031, 3896023};
-// Años subrayados (resaltados en el Excel): se reservan para medir el error.
+
+/** Años resaltados en el Excel. Se excluyen de la interpolación y se usan para medir el error. */
 const int SUBRAYADOS[5] = {1995, 2000, 2008, 2015, 2022};
 
+/**
+ * @brief Indica si un año es uno de los años subrayados.
+ *
+ * @param anio Año que se consulta.
+ * @return true si el año está en SUBRAYADOS y false en otro caso.
+ */
 bool esSubrayado(int anio) {
     for (int s : SUBRAYADOS)
         if (s == anio) return true;
     return false;
 }
 
-// Separa los 30 datos en nodos de interpolación (25) y datos de prueba (5).
+/**
+ * @brief Separa los 30 datos en 25 nodos de interpolación y 5 datos de prueba.
+ *
+ * @param xNodos Salida con los años de los nodos.
+ * @param yNodos Salida con la población en cada nodo.
+ * @param anioPrueba Salida con los años subrayados.
+ * @param yPrueba Salida con la población exacta de cada año subrayado.
+ */
 void separarDatos(std::vector<double>& xNodos, std::vector<double>& yNodos,
                   std::vector<int>& anioPrueba, std::vector<double>& yPrueba) {
     for (int i = 0; i < N_DATOS; i++) {
@@ -58,15 +73,27 @@ void separarDatos(std::vector<double>& xNodos, std::vector<double>& yNodos,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Algoritmo del trazador cúbico natural
-// ---------------------------------------------------------------------------
-
-// Coeficientes de los n polinomios cúbicos S_0, ..., S_{n-1}.
+/**
+ * @brief Coeficientes de los n polinomios cúbicos S_0, ..., S_{n-1} de un trazador.
+ */
 struct Trazador {
-    std::vector<double> x, a, b, c, d;
+    std::vector<double> x;  ///< Los n + 1 nodos x_0, ..., x_n.
+    std::vector<double> a;  ///< Coeficientes a_j, iguales a f(x_j).
+    std::vector<double> b;  ///< Coeficientes b_j de los términos lineales.
+    std::vector<double> c;  ///< Coeficientes c_j de los términos cuadráticos.
+    std::vector<double> d;  ///< Coeficientes d_j de los términos cúbicos.
 };
 
+/**
+ * @brief Construye el trazador cúbico natural que interpola los datos dados.
+ *
+ * Los coeficientes c_j se obtienen de un sistema tridiagonal que se resuelve con
+ * la factorización de Crout, también llamada algoritmo de Thomas, en O(n) operaciones.
+ *
+ * @param x Nodos en orden creciente, no necesariamente equiespaciados.
+ * @param y Valores de la función en los nodos.
+ * @return Los coeficientes del trazador.
+ */
 Trazador trazadorNatural(const std::vector<double>& x, const std::vector<double>& y) {
     int n = (int)x.size() - 1;  // número de subintervalos
     std::vector<double> a = y;  // a_j = f(x_j)
@@ -109,7 +136,16 @@ Trazador trazadorNatural(const std::vector<double>& x, const std::vector<double>
     return S;
 }
 
-// Evalúa el trazador en t: localiza el subintervalo [x_j, x_{j+1}] y aplica S_j.
+/**
+ * @brief Evalúa el trazador en un punto.
+ *
+ * Localiza el subintervalo [x_j, x_{j+1}] que contiene a t y evalúa S_j(t). Si t
+ * está fuera del intervalo de los nodos, se usa el primer o el último tramo.
+ *
+ * @param t Punto donde se evalúa.
+ * @param S Trazador construido con trazadorNatural.
+ * @return Valor de S(t).
+ */
 double evaluarTrazador(double t, const Trazador& S) {
     int n = (int)S.x.size() - 1;
     int j = n - 1;  // por defecto el último tramo (incluye t = x_n)
@@ -124,19 +160,38 @@ double evaluarTrazador(double t, const Trazador& S) {
     return S.a[j] + S.b[j] * dx + S.c[j] * dx * dx + S.d[j] * dx * dx * dx;
 }
 
+/**
+ * @brief Calcula el error relativo de una aproximación.
+ *
+ * @param exacto Valor exacto, distinto de cero.
+ * @param aprox Valor aproximado.
+ * @return El cociente |exacto - aprox| / |exacto|.
+ */
 double errorRelativo(double exacto, double aprox) { return std::fabs(exacto - aprox) / std::fabs(exacto); }
 
-// ---------------------------------------------------------------------------
-// Medición del tiempo de ejecución
-// ---------------------------------------------------------------------------
-
-// Las variables volatile impiden que el compilador elimine o saque del ciclo
-// de repeticiones los cálculos cuyo resultado no se usa.
+/**
+ * Recibe los resultados de los cálculos cronometrados. Al ser volatile, el
+ * compilador no puede eliminar esos cálculos aunque su resultado no se use.
+ */
 volatile double sumidero;
+
+/**
+ * Cero que se suma a los argumentos de los cálculos cronometrados. Al ser
+ * volatile, el compilador no puede sacar esos cálculos del ciclo de repeticiones.
+ */
 volatile double cero = 0.0;
 
-// Tiempo promedio, en microsegundos, de una ejecución de f. Se repite 'reps'
-// veces porque una sola ejecución dura menos que la resolución del reloj.
+/**
+ * @brief Mide el tiempo promedio de ejecución de una función.
+ *
+ * La función se ejecuta reps veces seguidas, porque una sola ejecución dura
+ * menos que la resolución del reloj, y el tiempo total se divide entre reps.
+ *
+ * @tparam F Tipo de la función que se mide, normalmente una lambda sin argumentos.
+ * @param f Función que se mide.
+ * @param reps Número de repeticiones.
+ * @return Tiempo promedio de una ejecución de f, en microsegundos.
+ */
 template <typename F>
 double medirMicrosegundos(F f, int reps) {
     auto inicio = std::chrono::steady_clock::now();
@@ -145,6 +200,11 @@ double medirMicrosegundos(F f, int reps) {
     return std::chrono::duration<double, std::micro>(fin - inicio).count() / reps;
 }
 
+/**
+ * @brief Calcula las aproximaciones y los errores, mide los tiempos y escribe los archivos CSV.
+ *
+ * @return 0 si el programa termina correctamente.
+ */
 int main() {
     std::vector<double> xNodos, yNodos, yPrueba;
     std::vector<int> anioPrueba;

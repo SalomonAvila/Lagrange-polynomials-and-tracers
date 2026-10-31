@@ -1,11 +1,26 @@
-"""
-graficas.py
------------
-Genera las figuras del informe a partir de los archivos CSV que producen
-los programas en C++ (lagrange.cpp y trazador_cubico.cpp).
+"""Genera las figuras del informe a partir de los CSV de los programas en C++.
 
-Uso: primero ejecute ./lagrange y ./trazador_cubico; luego
-     python graficas.py          (requiere matplotlib)
+Lee las curvas y los resultados que escriben lagrange.cpp y trazador_cubico.cpp,
+dibuja las tres figuras del informe en formato SVG y escribe resultados.csv, la
+tabla combinada que usa informe.typ.
+
+Primero se ejecutan ./lagrange y ./trazador_cubico y después este script, que
+requiere matplotlib::
+
+    python graficas.py
+
+Attributes:
+    AZUL (str): Color de la curva de Lagrange.
+    NARANJA (str): Color de la curva del trazador cúbico.
+    TINTA (str): Color de los datos y las etiquetas.
+    GRIS (str): Color de los ejes y la cuadrícula.
+    ANIOS (list[int]): Años de 1994 a 2023.
+    POB (list[int]): Población de Croacia en cada año de ANIOS.
+    SUBRAYADOS (list[int]): Años resaltados en el Excel, reservados para medir el error.
+    x_n (list[int]): Años de los 25 nodos de interpolación.
+    y_n (list[float]): Población de los nodos, en millones.
+    x_p (list[int]): Años de prueba, iguales a SUBRAYADOS.
+    y_p (list[float]): Población exacta de los años de prueba, en millones.
 """
 
 import csv
@@ -32,6 +47,14 @@ y_p = [p / 1e6 for a, p in zip(ANIOS, POB) if a in SUBRAYADOS]
 
 
 def leer(nombre):
+    """Lee un archivo CSV con encabezado.
+
+    Args:
+        nombre (str): Ruta del archivo CSV.
+
+    Returns:
+        list[dict[str, str]]: Una fila por diccionario, indexada por el nombre de cada columna.
+    """
     with open(nombre, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
@@ -50,6 +73,14 @@ plt.rcParams.update({
 
 
 def dibujar_base(ax):
+    """Dibuja los dos interpolantes y los datos exactos en unos ejes.
+
+    Las figuras de vista completa y de acercamiento comparten este contenido y
+    solo cambian los límites, el título y la leyenda.
+
+    Args:
+        ax (matplotlib.axes.Axes): Ejes en los que se dibuja.
+    """
     ax.plot([float(r["anio"]) for r in curva_L], [float(r["poblacion"]) / 1e6 for r in curva_L],
             color=AZUL, lw=1.6, label="Polinomio de Lagrange (grado 24)")
     ax.plot([float(r["anio"]) for r in curva_S], [float(r["poblacion"]) / 1e6 for r in curva_S],
