@@ -10,8 +10,9 @@ No se necesitan librerías externas: los datos están dentro de cada .cpp.
   g++ -std=c++17 -O2 -o trazador_cubico trazador_cubico.cpp
   ./trazador_cubico             (Windows: trazador_cubico.exe)
 
-Cada programa imprime la tabla de errores relativos y genera dos CSV
-(resultados_*.csv y curva_*.csv).
+Cada programa imprime la tabla de errores relativos y el tiempo de ejecución
+de cada etapa del algoritmo, y genera tres CSV (resultados_*.csv, curva_*.csv
+y tiempos_*.csv).
 
 Opcional (figuras del informe): python graficas.py  (requiere matplotlib)
 Informe: informe.pdf  (fuente Typst: informe.typ; compilar con  typst compile informe.typ)

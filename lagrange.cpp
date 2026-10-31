@@ -20,10 +20,12 @@
  * Compilar:  g++ -std=c++17 -O2 -o lagrange lagrange.cpp
  * Ejecutar:  ./lagrange        (en Windows: lagrange.exe)
  *
- * Salidas: tabla en consola, resultados_lagrange.csv y curva_lagrange.csv
- * (esta última sirve para graficar el polinomio en todo el intervalo).
+ * Salidas: tabla en consola, resultados_lagrange.csv, curva_lagrange.csv
+ * (esta última sirve para graficar el polinomio en todo el intervalo) y
+ * tiempos_lagrange.csv (tiempo de ejecución del algoritmo).
  */
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -86,6 +88,25 @@ real lagrange(real x, const std::vector<real>& nodos, const std::vector<real>& v
 
 real errorRelativo(real exacto, real aprox) { return std::fabs(exacto - aprox) / std::fabs(exacto); }
 
+// ---------------------------------------------------------------------------
+// Medición del tiempo de ejecución
+// ---------------------------------------------------------------------------
+
+// Las variables volatile impiden que el compilador elimine o saque del ciclo
+// de repeticiones los cálculos cuyo resultado no se usa.
+volatile real sumidero;
+volatile real cero = 0.0L;
+
+// Tiempo promedio, en microsegundos, de una ejecución de f. Se repite 'reps'
+// veces porque una sola ejecución dura menos que la resolución del reloj.
+template <typename F>
+double medirMicrosegundos(F f, int reps) {
+    auto inicio = std::chrono::steady_clock::now();
+    for (int r = 0; r < reps; r++) f();
+    auto fin = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::micro>(fin - inicio).count() / reps;
+}
+
 int main() {
     std::vector<real> xNodos, yNodos, yPrueba;
     std::vector<int> anioPrueba;
@@ -117,6 +138,29 @@ int main() {
         }
         std::fclose(curva);
     }
-    std::printf("\nArchivos generados: resultados_lagrange.csv, curva_lagrange.csv\n");
+
+    // Tiempo de ejecución. El polinomio de Lagrange no tiene etapa de
+    // construcción: todo el trabajo se hace en cada evaluación.
+    const int REPS_PRUEBA = 100000, REPS_MALLA = 200;
+    double tPrueba = medirMicrosegundos([&] {
+        for (int anio : anioPrueba) sumidero = lagrange(anio - ANIO_INICIAL + cero, xNodos, yNodos);
+    }, REPS_PRUEBA);
+    double tMalla = medirMicrosegundos([&] {
+        for (int i = 0; i <= 2000; i++) sumidero = lagrange(29.0L * i / 2000.0L + cero, xNodos, yNodos);
+    }, REPS_MALLA);
+
+    std::printf("\nTiempo de ejecucion (promedio por repeticion)\n");
+    std::printf("%-34s %10s %16s\n", "Etapa", "Repet.", "Tiempo (us)");
+    std::printf("%-34s %10d %16.3f\n", "Evaluacion en 5 anios de prueba", REPS_PRUEBA, tPrueba);
+    std::printf("%-34s %10d %16.3f\n", "Evaluacion en malla de 2001 puntos", REPS_MALLA, tMalla);
+
+    FILE* tiempos = std::fopen("tiempos_lagrange.csv", "w");
+    if (tiempos) {
+        std::fprintf(tiempos, "etapa,repeticiones,microsegundos\n");
+        std::fprintf(tiempos, "prueba,%d,%.6f\n", REPS_PRUEBA, tPrueba);
+        std::fprintf(tiempos, "malla,%d,%.6f\n", REPS_MALLA, tMalla);
+        std::fclose(tiempos);
+    }
+    std::printf("\nArchivos generados: resultados_lagrange.csv, curva_lagrange.csv, tiempos_lagrange.csv\n");
     return 0;
 }

@@ -21,6 +21,26 @@
   }
   out.rev().join()
 }
+// Tiempos de ejecución (microsegundos) medidos por los programas en C++.
+#let tiempos(nombre) = {
+  let d = (:)
+  for r in csv(nombre).slice(1) { d.insert(r.at(0), (reps: int(r.at(1)), us: float(r.at(2)))) }
+  d
+}
+#let tL = tiempos("tiempos_lagrange.csv")
+#let tS = tiempos("tiempos_trazador.csv")
+// Número con coma decimal y la cantidad de cifras decimales indicada.
+#let dec(x, n) = {
+  let s = str(calc.round(x, digits: n))
+  if n > 0 {
+    if not s.contains(".") { s += "." }
+    let faltan = n - s.split(".").at(1).len()
+    s += "0" * faltan
+  }
+  s.replace(".", ",")
+}
+#let veces(a, b) = str(int(calc.round(a / b)))
+
 #let cient(s) = {
   let (m, e) = s.split("e")
   let m = m.replace(".", ",")
@@ -28,7 +48,7 @@
 }
 
 #align(center)[
-  #text(size: 9pt, smallcaps[Pontificia Universidad Javeriana · Facultad de Ciencias · Departamento de Matemáticas])
+  #text(size: 9pt, smallcaps[Pontificia Universidad Javeriana])
   #v(0.6em)
   #text(size: 16pt, weight: "bold")[Polinomios de Lagrange y trazadores cúbicos: \ interpolación de la población de Croacia (1994–2023)]
   #v(0.5em)
@@ -149,6 +169,28 @@ for (int j = n - 1; j >= 0; j--) {
 
 El costo es $O(n)$. Por su parte, `evaluarTrazador(t, S)` localiza el subintervalo que contiene a $t$ y evalúa el polinomio cúbico correspondiente. Como los nodos no son equiespaciados (faltan los años reservados), las longitudes $h_j$ valen 1 o 2 años; el algoritmo admite este caso sin modificaciones.
 
+== Medición del tiempo de ejecución
+
+Cada programa mide, con el reloj monótono `std::chrono::steady_clock` de la librería estándar, cuánto tarda cada etapa del algoritmo. Solo se cronometran los cálculos: la lectura de los datos, la impresión en consola y la escritura de archivos quedan por fuera. Las etapas medidas son:
+
+- *Construcción*: cálculo de los coeficientes $a_j, b_j, c_j, d_j$ del trazador con `trazadorNatural`. El polinomio de Lagrange, en la forma de la ecuación @lagrange, no tiene esta etapa: no precalcula nada y hace todo el trabajo en cada evaluación.
+- *Evaluación en los 5 años de prueba*: las cinco aproximaciones de la @tabla.
+- *Evaluación en la malla*: los 2001 puntos con los que se dibujan las curvas de las figuras.
+
+Una sola ejecución de estas etapas puede durar menos de un microsegundo, por debajo de la resolución práctica del reloj. Por eso la función `medirMicrosegundos` repite cada etapa muchas veces (entre 200 y 100 000) y reporta el tiempo promedio por repetición. Para que el compilador, con la optimización `-O2`, no elimine cálculos cuyo resultado no se usa, cada resultado se guarda en una variable `volatile`:
+
+```cpp
+template <typename F>
+double medirMicrosegundos(F f, int reps) {
+    auto inicio = std::chrono::steady_clock::now();
+    for (int r = 0; r < reps; r++) f();
+    auto fin = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::micro>(fin - inicio).count() / reps;
+}
+```
+
+Los tiempos se imprimen en consola y se exportan a `tiempos_lagrange.csv` y `tiempos_trazador.csv`.
+
 == Verificación
 
 Para comprobar las implementaciones, sus resultados se compararon con cálculos independientes: el polinomio de Lagrange se evaluó también en aritmética racional exacta (sin redondeo alguno) y con la rutina `BarycentricInterpolator` de SciPy, y el trazador con `CubicSpline` de SciPy usando `bc_type="natural"`. Los valores coinciden en todas las cifras significativas reportadas. En particular, la coincidencia con la aritmética exacta muestra que el redondeo no influye en los resultados del polinomio de Lagrange.
@@ -198,6 +240,51 @@ Finalmente, la @errores compara los errores relativos en escala logarítmica.
   caption: [Error relativo de cada método en los años reservados (escala logarítmica).],
 ) <errores>
 
+== Tiempo de ejecución
+
+Los programas se compilaron y ejecutaron en el equipo descrito en la @equipo. Ambos programas son secuenciales, así que usan un solo hilo del procesador. Las mediciones se hicieron con el portátil conectado a la corriente y con el perfil de energía en modo de alto rendimiento.
+
+#figure(
+  table(
+    columns: (auto, auto),
+    align: (left, left),
+    stroke: none,
+    inset: (x: 8pt, y: 4pt),
+    table.hline(stroke: 0.6pt),
+    [*Equipo*], [Portátil ASUS TUF Dash F15 (FX517ZC)],
+    [*Procesador*], [Intel Core i5-12450H (12.ª generación): 8 núcleos (4 de rendimiento y 4 de eficiencia), 12 hilos, hasta 4,4 GHz],
+    [*Memoria caché*], [L1 de datos 320 KiB, L2 7 MiB, L3 12 MiB],
+    [*Memoria RAM*], [32 GB],
+    [*Sistema operativo*], [Fedora Linux 44 (núcleo Linux 7.2), 64 bits],
+    [*Compilador*], [`g++` (GCC) 16.2.1, opciones `-std=c++17 -O2`],
+    table.hline(stroke: 0.6pt),
+  ),
+  caption: [Especificaciones del equipo en el que se ejecutaron los programas.],
+) <equipo>
+
+La @tiempos reúne los tiempos medidos. Los valores cambian de una máquina a otra y, en menor medida, de una ejecución a otra (en corridas repetidas variaron menos de un 10 %), pero las proporciones entre los dos métodos se mantienen.
+
+#figure(
+  table(
+    columns: 3,
+    align: (left, right, right),
+    stroke: none,
+    inset: (x: 8pt, y: 4.5pt),
+    table.hline(stroke: 0.6pt),
+    table.header([*Etapa*], [*Lagrange* (µs)], [*Trazador cúbico* (µs)]),
+    table.hline(stroke: 0.4pt),
+    [Construcción de coeficientes], [—], [#dec(tS.construccion.us, 3)],
+    [Evaluación en los 5 años de prueba], [#dec(tL.prueba.us, 3)], [#dec(tS.prueba.us, 3)],
+    [Evaluación en la malla de 2001 puntos], [#dec(tL.malla.us, 1)], [#dec(tS.malla.us, 1)],
+    table.hline(stroke: 0.4pt),
+    [Tiempo por evaluación (malla)], [#dec(tL.malla.us / 2001 * 1000, 0) ns], [#dec(tS.malla.us / 2001 * 1000, 1) ns],
+    table.hline(stroke: 0.6pt),
+  ),
+  caption: [Tiempo promedio de ejecución de cada etapa, en microsegundos (1 µs = $10^(-6)$ s). La última fila divide el tiempo de la malla entre sus 2001 puntos.],
+) <tiempos>
+
+Los dos métodos son prácticamente instantáneos para este problema: incluso la etapa más lenta, evaluar el polinomio de Lagrange en los 2001 puntos de la malla, tarda menos de #dec(calc.ceil(tL.malla.us / 1000), 0) milisegundos. Aun así, la diferencia relativa es grande. Calcular los coeficientes del trazador cuesta apenas #dec(tS.construccion.us, 2) µs, y después cada evaluación del trazador es unas #veces(tL.malla.us, tS.malla.us) veces más rápida que una del polinomio de Lagrange. Incluso sumando la construcción, el trazador obtiene las cinco estimaciones de la @tabla unas #veces(tL.prueba.us, tS.construccion.us + tS.prueba.us) veces más rápido.
+
 = Análisis y comparación
 
 == Diferencias observadas
@@ -218,12 +305,15 @@ para algún $xi$ en el intervalo. El factor $omega(x) = product (x - x_i)$ depen
 
 == Comparación de costos
 
-Ambos métodos son baratos para 25 datos. El trazador requiere resolver un sistema tridiagonal ($O(n)$ operaciones) una sola vez y luego evaluar un polinomio cúbico; el polinomio de Lagrange requiere $O(n^2)$ operaciones en cada evaluación. Más allá del costo, la diferencia importante es la estabilidad: agregar datos mejora el trazador, mientras que en el polinomio de Lagrange con nodos equiespaciados suele empeorar las oscilaciones.
+Los tiempos de la @tiempos coinciden con lo que predice el conteo de operaciones. El trazador resuelve un sistema tridiagonal una sola vez, con $O(n)$ operaciones, y luego cada evaluación solo localiza el subintervalo (a lo sumo $n$ comparaciones) y evalúa un polinomio cúbico. El polinomio de Lagrange, en cambio, no reutiliza nada entre evaluaciones: cada una calcula los $n + 1$ polinomios base, cada uno con $n$ productos y divisiones, es decir, $O(n^2)$ operaciones. Con $n = 24$ son unas $25 times 24 = 600$ divisiones por punto, en precisión extendida (`long double`), que es más lenta que `double`. Eso explica que una evaluación de Lagrange tarde cerca de #dec(tL.malla.us / 2001 * 1000, 0) ns frente a unos #dec(tS.malla.us / 2001 * 1000, 0) ns del trazador.
+
+La diferencia crecería con más datos: duplicar el número de nodos multiplica por cerca de cuatro el costo de cada evaluación de Lagrange, pero solo por dos el del trazador. El costo de Lagrange podría bajar a $O(n)$ por evaluación usando la fórmula baricéntrica, que precalcula unos pesos, pero eso no corregiría su principal defecto: la estabilidad. Agregar datos mejora el trazador, mientras que en el polinomio de Lagrange con nodos equiespaciados suele empeorar las oscilaciones.
 
 = Conclusiones
 
 + Con muchos datos equiespaciados, el polinomio interpolante de Lagrange no es una herramienta adecuada para aproximar valores cerca de los extremos: en 1995 y 2022 produjo estimaciones entre 9 y 13 veces mayores que la población real.
 + El trazador cúbico natural aproximó los cinco años con errores relativos inferiores a $#"1,1" times 10^(-3)$, y en cuatro de ellos inferiores a $#"1,2" times 10^(-4)$.
++ El trazador también es más rápido: una vez calculados sus coeficientes, en menos de un microsegundo, cada evaluación es unas #veces(tL.malla.us, tS.malla.us) veces más rápida que la del polinomio de Lagrange. Para 25 datos ambos tiempos son despreciables, pero la diferencia crece con el número de nodos.
 + En el centro del intervalo ambos métodos tienen una precisión comparable. Lagrange solo superó al trazador en el año 2000, debido a un cambio brusco de tendencia en los datos que ningún interpolante suave puede capturar por completo.
 + Para interpolar conjuntos numerosos de datos, como series de población, es preferible usar trazadores cúbicos u otros métodos por tramos en lugar de un único polinomio de grado alto.
 

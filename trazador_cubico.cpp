@@ -15,9 +15,11 @@
  * Compilar:  g++ -std=c++17 -O2 -o trazador_cubico trazador_cubico.cpp
  * Ejecutar:  ./trazador_cubico        (en Windows: trazador_cubico.exe)
  *
- * Salidas: tabla en consola, resultados_trazador.csv y curva_trazador.csv.
+ * Salidas: tabla en consola, resultados_trazador.csv, curva_trazador.csv y
+ * tiempos_trazador.csv (tiempo de ejecución del algoritmo).
  */
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -124,6 +126,25 @@ double evaluarTrazador(double t, const Trazador& S) {
 
 double errorRelativo(double exacto, double aprox) { return std::fabs(exacto - aprox) / std::fabs(exacto); }
 
+// ---------------------------------------------------------------------------
+// Medición del tiempo de ejecución
+// ---------------------------------------------------------------------------
+
+// Las variables volatile impiden que el compilador elimine o saque del ciclo
+// de repeticiones los cálculos cuyo resultado no se usa.
+volatile double sumidero;
+volatile double cero = 0.0;
+
+// Tiempo promedio, en microsegundos, de una ejecución de f. Se repite 'reps'
+// veces porque una sola ejecución dura menos que la resolución del reloj.
+template <typename F>
+double medirMicrosegundos(F f, int reps) {
+    auto inicio = std::chrono::steady_clock::now();
+    for (int r = 0; r < reps; r++) f();
+    auto fin = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::micro>(fin - inicio).count() / reps;
+}
+
 int main() {
     std::vector<double> xNodos, yNodos, yPrueba;
     std::vector<int> anioPrueba;
@@ -155,6 +176,34 @@ int main() {
         }
         std::fclose(curva);
     }
-    std::printf("\nArchivos generados: resultados_trazador.csv, curva_trazador.csv\n");
+
+    // Tiempo de ejecución: construcción (cálculo de coeficientes) y evaluación.
+    const int REPS_CONSTRUCCION = 100000, REPS_PRUEBA = 100000, REPS_MALLA = 2000;
+    double tConstruccion = medirMicrosegundos([&] {
+        Trazador T = trazadorNatural(xNodos, yNodos);
+        sumidero = T.c[1] + cero;
+    }, REPS_CONSTRUCCION);
+    double tPrueba = medirMicrosegundos([&] {
+        for (int anio : anioPrueba) sumidero = evaluarTrazador(anio + cero, S);
+    }, REPS_PRUEBA);
+    double tMalla = medirMicrosegundos([&] {
+        for (int i = 0; i <= 2000; i++) sumidero = evaluarTrazador(ANIO_INICIAL + 29.0 * i / 2000.0 + cero, S);
+    }, REPS_MALLA);
+
+    std::printf("\nTiempo de ejecucion (promedio por repeticion)\n");
+    std::printf("%-34s %10s %16s\n", "Etapa", "Repet.", "Tiempo (us)");
+    std::printf("%-34s %10d %16.3f\n", "Construccion (coeficientes)", REPS_CONSTRUCCION, tConstruccion);
+    std::printf("%-34s %10d %16.3f\n", "Evaluacion en 5 anios de prueba", REPS_PRUEBA, tPrueba);
+    std::printf("%-34s %10d %16.3f\n", "Evaluacion en malla de 2001 puntos", REPS_MALLA, tMalla);
+
+    FILE* tiempos = std::fopen("tiempos_trazador.csv", "w");
+    if (tiempos) {
+        std::fprintf(tiempos, "etapa,repeticiones,microsegundos\n");
+        std::fprintf(tiempos, "construccion,%d,%.6f\n", REPS_CONSTRUCCION, tConstruccion);
+        std::fprintf(tiempos, "prueba,%d,%.6f\n", REPS_PRUEBA, tPrueba);
+        std::fprintf(tiempos, "malla,%d,%.6f\n", REPS_MALLA, tMalla);
+        std::fclose(tiempos);
+    }
+    std::printf("\nArchivos generados: resultados_trazador.csv, curva_trazador.csv, tiempos_trazador.csv\n");
     return 0;
 }
