@@ -85,10 +85,44 @@ struct Trazador {
 };
 
 /**
+ * @brief Resuelve el sistema lineal A x = v con eliminación gaussiana.
+ *
+ * Primero se anulan los elementos debajo de la diagonal y después se despeja x
+ * con sustitución hacia atrás. No se intercambian filas porque la matriz del
+ * trazador es estrictamente diagonal dominante, así que ningún pivote se anula.
+ *
+ * @param A Matriz cuadrada de coeficientes. Se recibe una copia.
+ * @param v Lado derecho del sistema. Se recibe una copia.
+ * @return La solución x del sistema.
+ */
+std::vector<double> eliminacionGaussiana(std::vector<std::vector<double>> A, std::vector<double> v) {
+    int m = (int)v.size();
+
+    // Eliminación hacia adelante.
+    for (int k = 0; k < m - 1; k++) {
+        for (int i = k + 1; i < m; i++) {
+            double factor = A[i][k] / A[k][k];
+            for (int j = k; j < m; j++) A[i][j] -= factor * A[k][j];
+            v[i] -= factor * v[k];
+        }
+    }
+
+    // Sustitución hacia atrás.
+    std::vector<double> sol(m);
+    for (int i = m - 1; i >= 0; i--) {
+        double suma = v[i];
+        for (int j = i + 1; j < m; j++) suma -= A[i][j] * sol[j];
+        sol[i] = suma / A[i][i];
+    }
+    return sol;
+}
+
+/**
  * @brief Construye el trazador cúbico natural que interpola los datos dados.
  *
- * Los coeficientes c_j se obtienen de un sistema tridiagonal que se resuelve con
- * la factorización de Crout, también llamada algoritmo de Thomas, en O(n) operaciones.
+ * Sigue la construcción general vista en clase: los a_j son los valores de la
+ * función, los c_j se obtienen del sistema cuadrado A c = y de n + 1 ecuaciones,
+ * y con ellos se calculan los b_j y los d_j.
  *
  * @param x Nodos en orden creciente, no necesariamente equiespaciados.
  * @param y Valores de la función en los nodos.
@@ -100,30 +134,31 @@ Trazador trazadorNatural(const std::vector<double>& x, const std::vector<double>
 
     // Paso 1: longitudes de los subintervalos.
     std::vector<double> h(n);
-    for (int i = 0; i < n; i++) h[i] = x[i + 1] - x[i];
+    for (int j = 0; j < n; j++) h[j] = x[j + 1] - x[j];
 
-    // Paso 2: lado derecho del sistema tridiagonal.
-    std::vector<double> alfa(n + 1, 0.0);
-    for (int i = 1; i < n; i++)
-        alfa[i] = 3.0 / h[i] * (a[i + 1] - a[i]) - 3.0 / h[i - 1] * (a[i] - a[i - 1]);
-
-    // Pasos 3-5: factorización de Crout y sustitución hacia adelante.
-    // Las filas 0 y n codifican c_0 = c_n = 0 (frontera natural).
-    std::vector<double> l(n + 1, 0.0), mu(n + 1, 0.0), z(n + 1, 0.0);
-    l[0] = 1.0;
-    for (int i = 1; i < n; i++) {
-        l[i] = 2.0 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1];
-        mu[i] = h[i] / l[i];
-        z[i] = (alfa[i] - h[i - 1] * z[i - 1]) / l[i];
+    // Paso 2: matriz A. La primera y la última fila imponen c_0 = c_n = 0,
+    // que son las condiciones de frontera naturales.
+    std::vector<std::vector<double>> A(n + 1, std::vector<double>(n + 1, 0.0));
+    A[0][0] = 1.0;
+    for (int j = 1; j < n; j++) {
+        A[j][j - 1] = h[j - 1];
+        A[j][j] = 2.0 * (h[j - 1] + h[j]);
+        A[j][j + 1] = h[j];
     }
-    l[n] = 1.0;
-    z[n] = 0.0;
+    A[n][n] = 1.0;
 
-    // Paso 6: sustitución hacia atrás para c, y cálculo de b y d.
-    std::vector<double> c(n + 1, 0.0), b(n), d(n);
-    for (int j = n - 1; j >= 0; j--) {
-        c[j] = z[j] - mu[j] * c[j + 1];
-        b[j] = (a[j + 1] - a[j]) / h[j] - h[j] * (c[j + 1] + 2.0 * c[j]) / 3.0;
+    // Paso 3: vector y del lado derecho, con ceros en la primera y la última posición.
+    std::vector<double> vecY(n + 1, 0.0);
+    for (int j = 1; j < n; j++)
+        vecY[j] = 3.0 / h[j] * (a[j + 1] - a[j]) - 3.0 / h[j - 1] * (a[j] - a[j - 1]);
+
+    // Paso 4: se resuelve A c = y para obtener c_0, ..., c_n.
+    std::vector<double> c = eliminacionGaussiana(A, vecY);
+
+    // Paso 5: b_j y d_j a partir de los c_j.
+    std::vector<double> b(n), d(n);
+    for (int j = 0; j < n; j++) {
+        b[j] = (a[j + 1] - a[j]) / h[j] - h[j] / 3.0 * (2.0 * c[j] + c[j + 1]);
         d[j] = (c[j + 1] - c[j]) / (3.0 * h[j]);
     }
 

@@ -126,29 +126,56 @@ Un trazador cúbico $S$ es una función definida a trozos: en cada subintervalo 
 $ S_j (x) = a_j + b_j (x - x_j) + c_j (x - x_j)^2 + d_j (x - x_j)^3. $
 Se exige que $S$ interpole los datos y que $S$, $S'$ y $S''$ sean continuas en los nodos interiores. Las condiciones de frontera naturales son $S''(x_0) = S''(x_n) = 0$, lo que equivale a $c_0 = c_n = 0$.
 
-Con $h_j = x_(j+1) - x_j$ y $a_j = y_j$, estas condiciones se reducen a un sistema lineal tridiagonal en las incógnitas $c_j$:
-$ h_(j-1) c_(j-1) + 2 (h_(j-1) + h_j) c_j + h_j c_(j+1) = 3/h_j (a_(j+1) - a_j) - 3/h_(j-1) (a_j - a_(j-1)), $
-para $j = 1, dots, n - 1$. La matriz es estrictamente diagonal dominante, así que el sistema tiene solución única. Una vez conocidos los $c_j$,
-$ b_j = (a_(j+1) - a_j) / h_j - h_j / 3 (c_(j+1) + 2 c_j), quad quad d_j = (c_(j+1) - c_j) / (3 h_j). $
+Con $h_j = x_(j+1) - x_j$ y $a_j = y_j$, estas condiciones se reducen a un sistema cuadrado de $n + 1$ ecuaciones, $A arrow(c) = arrow(y)$, cuyas incógnitas son $c_0, dots, c_n$. La matriz de coeficientes es
+$ A = mat(
+  1, 0, 0, 0, dots, 0;
+  h_0, 2(h_0 + h_1), h_1, 0, dots, 0;
+  0, h_1, 2(h_1 + h_2), h_2, dots, 0;
+  dots.v, dots.v, dots.v, dots.down, dots.down, dots.v;
+  0, 0, dots, h_(n-2), 2(h_(n-2) + h_(n-1)), h_(n-1);
+  0, 0, dots, 0, 0, 1;
+) $
+y los vectores de incógnitas y del lado derecho son
+$ arrow(c) = mat(c_0; c_1; dots.v; c_(n-1); c_n), quad quad arrow(y) = mat(
+  0;
+  3/h_1 (a_2 - a_1) - 3/h_0 (a_1 - a_0);
+  dots.v;
+  3/h_(n-1) (a_n - a_(n-1)) - 3/h_(n-2) (a_(n-1) - a_(n-2));
+  0;
+). $
+La primera y la última fila imponen $c_0 = c_n = 0$, que son las condiciones de frontera naturales, y cada fila interior resulta de exigir la continuidad de $S$, $S'$ y $S''$ en un nodo interior. La matriz es tridiagonal y estrictamente diagonal dominante, así que el sistema tiene solución única. Una vez conocidos los $c_j$, los demás coeficientes se obtienen con
+$ b_j = 1/h_j (a_(j+1) - a_j) - h_j / 3 (2 c_j + c_(j+1)), quad quad d_j = (c_(j+1) - c_j) / (3 h_j). $
 
-Los coeficientes se agrupan en la estructura `Trazador`, que guarda los nodos y los vectores `a`, `b`, `c` y `d`. La función `trazadorNatural(x, y)` implementa el algoritmo clásico del trazador cúbico natural. El sistema tridiagonal se resuelve con la factorización de Crout, también conocida como algoritmo de Thomas, en tres fases: el cálculo del lado derecho `alfa`, la eliminación hacia adelante con los vectores `l`, `mu` y `z`, y la sustitución hacia atrás para obtener $c$, $b$ y $d$:
+Los coeficientes se agrupan en la estructura `Trazador`, que guarda los nodos y los vectores `a`, `b`, `c` y `d`. La función `trazadorNatural(x, y)` sigue paso a paso la construcción general vista en clase: calcula las longitudes $h_j$, arma la matriz `A` y el vector `vecY`, resuelve el sistema con la función `eliminacionGaussiana` y, por último, obtiene $b_j$ y $d_j$ con las fórmulas anteriores:
 
 ```cpp
-// Pasos 3-5: factorización de Crout y sustitución hacia adelante.
-for (int i = 1; i < n; i++) {
-    l[i] = 2.0 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1];
-    mu[i] = h[i] / l[i];
-    z[i] = (alfa[i] - h[i - 1] * z[i - 1]) / l[i];
+// Paso 2: matriz A. La primera y la última fila imponen c_0 = c_n = 0.
+std::vector<std::vector<double>> A(n + 1, std::vector<double>(n + 1, 0.0));
+A[0][0] = 1.0;
+for (int j = 1; j < n; j++) {
+    A[j][j - 1] = h[j - 1];
+    A[j][j] = 2.0 * (h[j - 1] + h[j]);
+    A[j][j + 1] = h[j];
 }
-// Paso 6: sustitución hacia atrás para c, y cálculo de b y d.
-for (int j = n - 1; j >= 0; j--) {
-    c[j] = z[j] - mu[j] * c[j + 1];
-    b[j] = (a[j + 1] - a[j]) / h[j] - h[j] * (c[j + 1] + 2.0 * c[j]) / 3.0;
+A[n][n] = 1.0;
+
+// Paso 3: vector y del lado derecho, con ceros en la primera y la última posición.
+std::vector<double> vecY(n + 1, 0.0);
+for (int j = 1; j < n; j++)
+    vecY[j] = 3.0 / h[j] * (a[j + 1] - a[j]) - 3.0 / h[j - 1] * (a[j] - a[j - 1]);
+
+// Paso 4: se resuelve A c = y para obtener c_0, ..., c_n.
+std::vector<double> c = eliminacionGaussiana(A, vecY);
+
+// Paso 5: b_j y d_j a partir de los c_j.
+std::vector<double> b(n), d(n);
+for (int j = 0; j < n; j++) {
+    b[j] = (a[j + 1] - a[j]) / h[j] - h[j] / 3.0 * (2.0 * c[j] + c[j + 1]);
     d[j] = (c[j + 1] - c[j]) / (3.0 * h[j]);
 }
 ```
 
-El costo es $O(n)$. Por su parte, `evaluarTrazador(t, S)` localiza el subintervalo que contiene a $t$ y evalúa el polinomio cúbico correspondiente. Como faltan los años reservados, los nodos no son equiespaciados y las longitudes $h_j$ valen 1 o 2 años. El algoritmo admite este caso sin modificaciones.
+La función `eliminacionGaussiana` anula los elementos que están debajo de la diagonal y después despeja la solución con sustitución hacia atrás. No necesita intercambiar filas, porque en una matriz estrictamente diagonal dominante ningún pivote se anula. Como recorre la matriz completa, de tamaño $(n + 1) times (n + 1)$, su costo es $O(n^3)$ operaciones, que para $n = 24$ sigue siendo muy poco. Para comprobar la implementación se resolvió también el Ejemplo 1 de clase, con los puntos $(5, 5)$, $(7, 2)$ y $(9, 4)$, y el programa obtuvo los mismos coeficientes: $c_1 = 15 slash 16$, $b_0 = -17 slash 8$, $b_1 = -1 slash 4$ y $d_0 = 5 slash 32$. Por su parte, `evaluarTrazador(t, S)` localiza el subintervalo que contiene a $t$ y evalúa el polinomio cúbico correspondiente. Como faltan los años reservados, los nodos no son equiespaciados y las longitudes $h_j$ valen 1 o 2 años. El algoritmo admite este caso sin modificaciones.
 
 == Medición del tiempo de ejecución
 
@@ -261,7 +288,7 @@ La @tiempos reúne los tiempos medidos. Los valores cambian de una máquina a ot
   caption: [Tiempo promedio de ejecución de cada etapa en microsegundos, donde 1 µs equivale a $10^(-6)$ s. La última fila, en nanosegundos, divide el tiempo de la malla entre sus 2001 puntos.],
 ) <tiempos>
 
-Los dos métodos son prácticamente instantáneos para este problema: incluso la etapa más lenta, evaluar el polinomio de Lagrange en los 2001 puntos de la malla, tarda menos de #dec(calc.ceil(tL.malla.us / 1000), 0) milisegundos. Aun así, la diferencia relativa es grande. Calcular los coeficientes del trazador cuesta apenas #dec(tS.construccion.us, 2) µs, y después cada evaluación del trazador es unas #veces(tL.malla.us, tS.malla.us) veces más rápida que una del polinomio de Lagrange. Incluso sumando la construcción, el trazador obtiene las cinco estimaciones de la @tabla unas #veces(tL.prueba.us, tS.construccion.us + tS.prueba.us) veces más rápido.
+Los dos métodos son prácticamente instantáneos para este problema: incluso la etapa más lenta, evaluar el polinomio de Lagrange en los 2001 puntos de la malla, tarda menos de #dec(calc.ceil(tL.malla.us / 1000), 0) milisegundos. Aun así, la diferencia relativa es grande. Calcular los coeficientes del trazador cuesta #dec(tS.construccion.us, 1) µs, pero se hace una sola vez, y después cada evaluación del trazador es unas #veces(tL.malla.us, tS.malla.us) veces más rápida que una del polinomio de Lagrange. Sumando la construcción y las evaluaciones, el trazador obtiene las cinco estimaciones de la @tabla en #dec(tS.construccion.us + tS.prueba.us, 1) µs, frente a #dec(tL.prueba.us, 1) µs del polinomio de Lagrange.
 
 = Análisis y comparación
 
@@ -283,9 +310,9 @@ para algún $xi$ en el intervalo. El factor $omega(x) = product (x - x_i)$ depen
 
 == Comparación de costos
 
-Los tiempos de la @tiempos coinciden con lo que predice el conteo de operaciones. El trazador resuelve un sistema tridiagonal una sola vez, con $O(n)$ operaciones, y luego cada evaluación solo localiza el subintervalo, con a lo sumo $n$ comparaciones, y evalúa un polinomio cúbico. El polinomio de Lagrange, en cambio, no reutiliza nada entre evaluaciones: cada una calcula los $n + 1$ polinomios base, cada uno con $n$ productos y divisiones, es decir, $O(n^2)$ operaciones. Con $n = 24$ son unas $25 times 24 = 600$ divisiones por punto, hechas en `long double`, que es más lento que `double`. Eso explica que una evaluación de Lagrange tarde cerca de #dec(tL.malla.us / 2001 * 1000, 0) ns frente a unos #dec(tS.malla.us / 2001 * 1000, 0) ns del trazador.
+Los tiempos de la @tiempos coinciden con lo que predice el conteo de operaciones. El trazador arma y resuelve el sistema $A arrow(c) = arrow(y)$ una sola vez. La eliminación gaussiana sobre la matriz completa cuesta $O(n^3)$ operaciones, y por eso la construcción es la etapa más costosa del trazador. Si se aprovechara que la matriz es tridiagonal, el algoritmo de Thomas resolvería el mismo sistema en $O(n)$ operaciones, pero se prefirió la eliminación gaussiana general para seguir la construcción vista en clase. Luego, cada evaluación solo localiza el subintervalo, con a lo sumo $n$ comparaciones, y evalúa un polinomio cúbico. El polinomio de Lagrange, en cambio, no reutiliza nada entre evaluaciones: cada una calcula los $n + 1$ polinomios base, cada uno con $n$ productos y divisiones, es decir, $O(n^2)$ operaciones. Con $n = 24$ son unas $25 times 24 = 600$ divisiones por punto, hechas en `long double`, que es más lento que `double`. Eso explica que una evaluación de Lagrange tarde cerca de #dec(tL.malla.us / 2001 * 1000, 0) ns frente a unos #dec(tS.malla.us / 2001 * 1000, 0) ns del trazador.
 
-La diferencia crecería con más datos: duplicar el número de nodos multiplica por cerca de cuatro el costo de cada evaluación de Lagrange, pero solo por dos el del trazador. El costo de Lagrange podría bajar a $O(n)$ por evaluación usando la fórmula baricéntrica, que precalcula unos pesos, pero eso no corregiría su principal defecto: la estabilidad. Agregar datos mejora el trazador, mientras que en el polinomio de Lagrange con nodos equiespaciados suele empeorar las oscilaciones.
+La diferencia en las evaluaciones crecería con más datos: duplicar el número de nodos multiplica por cerca de cuatro el costo de cada evaluación de Lagrange, pero solo por dos el del trazador. La construcción del trazador, en cambio, se multiplicaría por cerca de ocho, aunque solo se hace una vez. El costo de Lagrange podría bajar a $O(n)$ por evaluación usando la fórmula baricéntrica, que precalcula unos pesos, pero eso no corregiría su principal defecto: la estabilidad. Agregar datos mejora el trazador, mientras que en el polinomio de Lagrange con nodos equiespaciados suele empeorar las oscilaciones.
 
 = Conclusiones
 
@@ -293,7 +320,7 @@ Con muchos datos equiespaciados, el polinomio interpolante de Lagrange no es una
 
 En el centro del intervalo ambos métodos tienen una precisión comparable. Lagrange solo superó al trazador en el año 2000, debido a un cambio brusco de tendencia en los datos que ningún interpolante suave puede capturar por completo.
 
-El trazador también es más rápido. Sus coeficientes se calculan en menos de un microsegundo y, a partir de ahí, cada evaluación es unas #veces(tL.malla.us, tS.malla.us) veces más rápida que la del polinomio de Lagrange. Para 25 datos ambos tiempos son despreciables, pero la diferencia crece con el número de nodos.
+El trazador también es más rápido. Sus coeficientes se calculan una sola vez, en unos #dec(tS.construccion.us, 0) µs, y a partir de ahí cada evaluación es unas #veces(tL.malla.us, tS.malla.us) veces más rápida que la del polinomio de Lagrange. Para 25 datos ambos tiempos son despreciables, pero la diferencia crece con el número de nodos.
 
 Por todo lo anterior, para interpolar conjuntos numerosos de datos, como las series de población, es preferible usar trazadores cúbicos u otros métodos por tramos en lugar de un único polinomio de grado alto.
 
